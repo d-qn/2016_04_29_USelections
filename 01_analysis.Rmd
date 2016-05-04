@@ -1,0 +1,147 @@
+---
+title: "US election analysis"
+author: "Duc-Quang Nguyen"
+date: "29 April 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(swiTheme)
+library(dplyr)
+library(readr)
+library(tidyr)
+library(zoo)
+library(svglite)
+library(htmltools)
+```
+
+## Load data
+```{r load data}
+
+data <- read.csv("data/uselex_stats_040516.csv", stringsAsFactors = F, check.names = F)
+# convert date
+data$date <- as.Date(data$date, format = "%d.%m.%y")
+#data$value <- as.numeric(data$value)
+
+# tranform wide to long
+data <- data %>% gather(candidate, value, -date)
+
+# define party/candidates
+data$party <- ifelse(data$candidate %in% c("TRUMP", "CRUZ", "KASICH"), "republican", "democrat")
+data$party <- ifelse(data$candidate == "SCHNEIDER-AMMANN", "Swiss", data$party)
+
+```
+
+## Plot
+```{r plot}
+# reorder factors
+#data[which(data$candidate == "SCHNEIDER-AMMANN"),'candidate'] <- "SCHNEIDER-AMMANN (current Swiss President)"
+
+data$candidate <- factor(data$candidate, levels = 
+  c("TRUMP", "CLINTON", "CRUZ", "SANDERS", "KASICH", "SCHNEIDER-AMMANN"))
+cols <- c("#046AB4", "#E00614", "#336666")
+
+# define key events
+events <- data.frame(
+  date = as.Date(c("2016-02-01", "2016-02-09", "2016-03-01", "2016-04-05", "2016-04-19", "2016-05-03")),
+  y = rep(0, 6),
+  #yend = c(20, 13, 18, 15, 10),
+  yend = rep(16, 6),
+  label = c("Iowa caucus", "New Hampshire primary", "Super Tuesday", "Wisconsin primary", "New York primary", "Indiana primary"),
+  stringsAsFactors = F
+)
+events_annot <- events
+events_annot <- events_annot %>% rename(value = yend, lab = label) %>% select(-y)
+events_annot1 <- events_annot2 <- events_annot
+events_annot1$candidate <- factor("TRUMP", levels(data$candidate))
+events_annot2$candidate <- factor("CLINTON", levels(data$candidate))
+events_annot <- rbind(events_annot1, events_annot2)
+
+medias <- c(
+"20 Minuten", "Blick am Abend", "Schweiz am Sonntag", "20 Minutes", "SonntagsBlick", 'SonntagsZeitung', 'Anzeiger Nordwestschweiz', 'Blick', 
+'Tages-Anzeiger', 'Le Matin Dimanche', 'Berner Zeitung', 'Neue Luzerner Zeitung', 'St. Galler Tagblatt', 'Neue Zürcher Zeitung', 'NZZ am Sonntag'
+)
+
+
+
+# weekly average
+data$week <- as.Date(cut(data$date, breaks = "week", start.on.monday = TRUE))
+data.w <- data %>% group_by(candidate, week, party) %>% 
+  summarise(value = mean(value, na.rm = T)) %>%
+  ungroup() %>% rename(date = week)
+
+subtitle <- "Daily count of articles in the Swiss media* containing candidates' names between February 1 and May 4, 2016. Current Swiss president Johann Schneider-Ammann included for comparison."
+caption <- paste0("*Based on the top 15 Swiss papers by circulation: ",
+  paste(medias, collapse =", "))
+caption <-  paste0(strwrap(caption, 220), sep="", collapse="\n")
+
+
+g1 <- ggplot(data = data, aes(date, value)) + 
+  # vline
+  geom_segment(data = events, aes(x = date, xend = date, y = y, yend = yend),
+    alpha = 0.5, colour = "darkgrey", size = 0.15, linetype = 3) +
+  # vline labels
+  # geom_text(data = events_annot, mapping=aes(x=date, y=value, label=lab), 
+  #   size=2.3, angle=90, vjust=1.1, hjust = -0.1, alpha = 0.9, color = "darkgrey") + 
+  geom_text(data = events, mapping=aes(x=date, y=yend, label=label), 
+    size=2.3, angle=90, vjust=1.1, hjust = -0.1, alpha = 0.9, color = "darkgrey") + 
+  scale_y_continuous(expand = c(0, 0), limits = range(data$value), 
+    name = "") +
+  scale_x_date(name = "", expand = c(0.03, 0), limits = range(data$date)) +
+  scale_fill_manual(values = cols) +
+  scale_colour_manual(values = cols) +
+  guides(fill = FALSE) + guides(colour=FALSE) + 
+  geom_area(aes(colour = party, fill = party), alpha = 0.9) + 
+  geom_area(data = data.w, aes(fill = party), alpha = 0.35) + 
+  facet_wrap(~candidate, ncol = 2, switch = "x") + swi_theme(y_gridlines = F) +
+  # remove grid
+  theme(
+    strip.text.x = element_text(size = rel(1.6), vjust = 5),
+    panel.margin = unit(1, "lines"),
+    plot.margin = unit(c(2, 0, 1, 0), "lines"),
+    plot.title = element_text(size = rel(2)),
+    plot.subtitle = element_text(lineheight = 1.4),
+    plot.caption = element_text(lineheight = 1.2)) +
+  labs(
+    title="Trump leads Swiss media coverage of US presidential race",
+    subtitle=subtitle, caption=caption
+  )
+g1
+
+
+
+### Save as an svg html graphic
+tags$html(
+  tags$head(includeHTML("styles.html")),
+  tags$body(
+    suppressMessages(htmlSVG(print(g1), width = 14, height = 14)),
+     HTML('<script type="text/javascript" src="https://www.swissinfo.ch/static/Themes/basic/js/vendor/iframeResizer.contentWindow.3.5.3.min.js"></script>') 
+    )
+) -> chart
+
+#html_print(chart)
+save_html(chart, "US_elections_inSwissMedia.html")
+
+```
+
+## Insert the following text in the html body between \<defs\>\<style\> and upload the fonts folder!!!
+
+```
+  @font-face {
+       font-family: Open Sans;
+       src: url(fonts/OpenSans-Regular.ttf) format("truetype");
+  }
+  @font-face {
+       font-family: OpenSans-Light;
+       src: url(fonts/OpenSans-Light.ttf) format("truetype");
+  }
+  @font-face {
+     font-family: OpenSans-CondensedLight;
+     src: url(fonts/OpenSans-CondLight.ttf) format("truetype");
+  }
+  @font-face {
+     font-family: OpenSans-CondensedLightItalic;
+     src: url(fonts/OpenSans-CondLightItalic.ttf) format("truetype");
+  }
+```
+
